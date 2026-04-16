@@ -55,6 +55,19 @@ export function createServer(deps: ServerDeps): express.Express {
   return server;
 }
 
+// ── Allowed orgs/repos (security: ignore webhooks from unauthorized sources) ──
+
+function isAllowed(owner: string, repo: string): boolean {
+  const allowList = process.env.ALLOWED_REPOS;
+  if (!allowList) return true; // no allowlist = allow all (for dev)
+
+  const entries = allowList.split(",").map((e) => e.trim().toLowerCase());
+  const fullName = `${owner}/${repo}`.toLowerCase();
+  const orgName = owner.toLowerCase();
+
+  return entries.some((e) => e === fullName || e === orgName);
+}
+
 // ── Webhook event handling ──────────────────────────────────────────
 
 function registerWebhooks(app: App, reviewer: Reviewer): void {
@@ -65,6 +78,12 @@ function registerWebhooks(app: App, reviewer: Reviewer): void {
       const owner = repository.owner.login;
       const repo = repository.name;
       const pullNumber = pr.number;
+
+      // Security: only process allowed orgs/repos
+      if (!isAllowed(owner, repo)) {
+        logger.warn({ owner, repo }, "Blocked — not in ALLOWED_REPOS");
+        return;
+      }
 
       logger.info(
         { owner, repo, pullNumber, action: payload.action },
