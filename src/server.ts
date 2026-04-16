@@ -1,6 +1,5 @@
 import express from "express";
 import type { App } from "@octokit/app";
-import type { ReviewerName } from "./config/schema.js";
 import type { Reviewer } from "./reviewers/types.js";
 import { loadRepoConfig } from "./config/loader.js";
 import { fetchPRContext } from "./github/diff.js";
@@ -9,18 +8,17 @@ import { logger } from "./utils/logger.js";
 
 interface ServerDeps {
   app: App;
-  registry: Map<ReviewerName, Reviewer>;
+  reviewer: Reviewer;
   port: number;
-  webhookSecret: string;
 }
 
 export function createServer(deps: ServerDeps): express.Express {
-  const { app, registry, port } = deps;
+  const { app, reviewer, port } = deps;
   const server = express();
 
   // ── Health check ───────────────────────────────────────────────────
   server.get("/health", (_req, res) => {
-    res.json({ status: "ok", reviewers: [...registry.keys()] });
+    res.json({ status: "ok", reviewer: reviewer.name });
   });
 
   // ── Webhook endpoint ──────────────────────────────────────────────
@@ -48,7 +46,7 @@ export function createServer(deps: ServerDeps): express.Express {
   );
 
   // ── Register webhook handlers ─────────────────────────────────────
-  registerWebhooks(app, registry);
+  registerWebhooks(app, reviewer);
 
   server.listen(port, () => {
     logger.info({ port }, "AI Code Reviewer listening");
@@ -59,10 +57,7 @@ export function createServer(deps: ServerDeps): express.Express {
 
 // ── Webhook event handling ──────────────────────────────────────────
 
-function registerWebhooks(
-  app: App,
-  registry: Map<ReviewerName, Reviewer>
-): void {
+function registerWebhooks(app: App, reviewer: Reviewer): void {
   app.webhooks.on(
     ["pull_request.opened", "pull_request.synchronize", "pull_request.reopened"],
     async ({ payload, octokit }) => {
@@ -94,10 +89,10 @@ function registerWebhooks(
           config.settings.ignorePatterns
         );
 
-        // 3. Run the review pipeline
+        // 3. Run the 3-pass review pipeline
         await runPipeline({
           octokit: octokit as any,
-          registry,
+          reviewer,
           config,
           pr: prContext,
         });

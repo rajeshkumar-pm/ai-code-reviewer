@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 export interface EnvConfig {
   githubAppId: string;
@@ -6,8 +7,6 @@ export interface EnvConfig {
   githubWebhookSecret: string;
 
   anthropicApiKey: string;
-  openaiApiKey: string;
-  geminiApiKey: string;
 
   port: number;
   logLevel: string;
@@ -27,7 +26,8 @@ export function loadEnv(): EnvConfig {
   let githubPrivateKey = process.env.GITHUB_PRIVATE_KEY ?? "";
 
   if (!githubPrivateKey && privateKeyPath) {
-    githubPrivateKey = fs.readFileSync(privateKeyPath, "utf-8");
+    const resolved = path.resolve(privateKeyPath);
+    githubPrivateKey = fs.readFileSync(resolved, "utf-8");
   }
 
   if (!githubPrivateKey) {
@@ -41,9 +41,7 @@ export function loadEnv(): EnvConfig {
     githubPrivateKey,
     githubWebhookSecret: requireEnv("GITHUB_WEBHOOK_SECRET"),
 
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
-    openaiApiKey: process.env.OPENAI_API_KEY ?? "",
-    geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+    anthropicApiKey: requireEnv("ANTHROPIC_API_KEY"),
 
     port: Number(process.env.PORT) || 3000,
     logLevel: process.env.LOG_LEVEL ?? "info",

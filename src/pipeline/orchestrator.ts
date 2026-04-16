@@ -1,5 +1,5 @@
 import type { Octokit } from "@octokit/core";
-import type { ReviewerName, AppConfig } from "../config/schema.js";
+import type { AppConfig } from "../config/schema.js";
 import type { Reviewer, ReviewFinding } from "../reviewers/types.js";
 import type { PullRequestContext } from "../github/diff.js";
 import { postFindings } from "../github/comments.js";
@@ -7,22 +7,26 @@ import { logger } from "../utils/logger.js";
 
 interface OrchestratorDeps {
   octokit: Octokit;
-  registry: Map<ReviewerName, Reviewer>;
+  reviewer: Reviewer;
   config: AppConfig;
   pr: PullRequestContext;
 }
 
 /**
- * Run every enabled reviewer in the configured order.
- * Each reviewer receives the findings from all prior reviewers
- * so it can add depth without duplicating.
+ * Run the 3-pass Claude pipeline:
+ *   Pass 1 (analysis)  → understand code structure, dependencies, data flow
+ *   Pass 2 (review)    → deep security & vulnerability review
+ *   Pass 3 (review)    → cross-check, verify, catch missed issues
+ *
+ * Analysis passes produce context text; review passes produce findings.
+ * All findings are aggregated and posted to the PR.
  */
 export async function runPipeline(deps: OrchestratorDeps): Promise<void> {
-  const { octokit, registry, config, pr } = deps;
-  const enabledReviewers = config.reviewers.filter((r) => r.enabled);
+  const { octokit, reviewer, config, pr } = deps;
+  const enabledPasses = config.reviewers.filter((r) => r.enabled);
 
-  if (enabledReviewers.length === 0) {
-    logger.info("No reviewers enabled — skipping");
+  if (enabledPasses.length === 0) {
+    logger.info("No passes enabled — skipping");
     return;
   }
 
@@ -39,42 +43,48 @@ export async function runPipeline(deps: OrchestratorDeps): Promise<void> {
     return;
   }
 
+  let analysisContext = "";
   const allFindings: ReviewFinding[] = [];
 
-  for (const reviewerConfig of enabledReviewers) {
-    const reviewer = registry.get(reviewerConfig.name);
-    if (!reviewer) {
-      logger.warn(
-        { name: reviewerConfig.name },
-        "Reviewer enabled but not in registry (missing API key?) — skipping"
-      );
-      continue;
-    }
-
+  for (const passConfig of enabledPasses) {
     try {
-      logger.info({ reviewer: reviewerConfig.name }, "Running reviewer");
-
-      const findings = await reviewer.review({
-        pr,
-        config: reviewerConfig,
-        priorFindings: [...allFindings],
-      });
-
       logger.info(
-        { reviewer: reviewerConfig.name, findingCount: findings.length },
-        "Reviewer complete"
+        { pass: passConfig.name, type: passConfig.passType },
+        "Running pass"
       );
 
-      allFindings.push(...findings);
+      const input = {
+        pr,
+        config: passConfig,
+        priorFindings: [...allFindings],
+        analysisContext,
+      };
+
+      if (passConfig.passType === "analysis") {
+        // Analysis pass — capture context for later passes
+        analysisContext = await reviewer.analyze(input);
+        logger.info(
+          { pass: passConfig.name, contextLength: analysisContext.length },
+          "Analysis pass complete"
+        );
+      } else {
+        // Review pass — collect findings
+        const findings = await reviewer.review(input);
+        logger.info(
+          { pass: passConfig.name, findingCount: findings.length },
+          "Review pass complete"
+        );
+        allFindings.push(...findings);
+      }
     } catch (err) {
       logger.error(
-        { err, reviewer: reviewerConfig.name },
-        "Reviewer failed — continuing pipeline"
+        { err, pass: passConfig.name },
+        "Pass failed — continuing pipeline"
       );
     }
   }
 
-  // Post aggregated findings
+  // Post aggregated findings from all review passes
   await postFindings({
     octokit,
     owner: pr.owner,

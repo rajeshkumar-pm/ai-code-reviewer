@@ -13,7 +13,19 @@ export class ClaudeReviewer implements Reviewer {
   }
 
   async review(input: ReviewInput): Promise<ReviewFinding[]> {
-    logger.info({ model: input.config.model }, "Claude review started");
+    const text = await this.call(input);
+    return parseFindings(text, input.config.name);
+  }
+
+  async analyze(input: ReviewInput): Promise<string> {
+    return this.call(input);
+  }
+
+  private async call(input: ReviewInput): Promise<string> {
+    logger.info(
+      { model: input.config.model, pass: input.config.name },
+      "Claude call started"
+    );
 
     const response = await this.client.messages.create({
       model: input.config.model,
@@ -27,12 +39,13 @@ export class ClaudeReviewer implements Reviewer {
 
     logger.info(
       {
+        pass: input.config.name,
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,
       },
-      "Claude review completed"
+      "Claude call completed"
     );
 
-    return parseFindings(text, this.name);
+    return text;
   }
 }

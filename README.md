@@ -1,86 +1,81 @@
 # AI Code Reviewer
 
-A GitHub App that orchestrates **multi-AI code reviews**. When a PR is opened or updated, it runs Claude, Codex (GPT-4o), and Gemini in sequence — each reviewer sees the previous reviewers' findings to add depth without duplication — then posts the aggregated results as inline PR review comments.
+A GitHub App that runs a **3-pass Claude review pipeline** on every pull request. It first understands the code (structure, dependencies, data flow), then performs a deep security review, then cross-checks and verifies the findings — all using Claude with different specialized prompts.
 
-## Architecture
+## How It Works
 
 ```
 PR opened/updated
        │
        ▼
-  ┌─────────┐     ┌──────────────┐     ┌──────────────────────┐
-  │  GitHub  │────▶│  Webhook     │────▶│  Pipeline            │
-  │  Webhook │     │  Handler     │     │  Orchestrator        │
-  └─────────┘     └──────────────┘     └──────┬───────────────┘
-                                               │
-                        ┌──────────────────────┼──────────────────────┐
-                        ▼                      ▼                      ▼
-                  ┌───────────┐         ┌───────────┐         ┌───────────┐
-                  │  Claude   │────────▶│  Codex    │────────▶│  Gemini   │
-                  │  (1st)    │findings │  (2nd)    │findings │  (3rd)    │
-                  └───────────┘         └───────────┘         └───────────┘
-                                                                      │
-                                                               ▼
-                                                    ┌──────────────────┐
-                                                    │  Post PR Review  │
-                                                    │  (inline + summary)│
-                                                    └──────────────────┘
+  ┌─────────────────────────────────────────────────┐
+  │  Pass 1: Code Analyst (analysis)                │
+  │  → Understands functions, deps, data flow,      │
+  │    state changes, risk surface                   │
+  └──────────────────────┬──────────────────────────┘
+                         │ context
+                         ▼
+  ┌─────────────────────────────────────────────────┐
+  │  Pass 2: Security Reviewer (review)             │
+  │  → OWASP top 10, injection, auth, data exposure,│
+  │    input validation, error handling              │
+  └──────────────────────┬──────────────────────────┘
+                         │ findings
+                         ▼
+  ┌─────────────────────────────────────────────────┐
+  │  Pass 3: Verification Pass (review)             │
+  │  → Cross-check, flag false positives,           │
+  │    catch missed logic/business logic flaws       │
+  └──────────────────────┬──────────────────────────┘
+                         │
+                         ▼
+               ┌──────────────────┐
+               │  Post PR Review  │
+               │  (inline comments)│
+               └──────────────────┘
 ```
 
 ## Features
 
-- **Multi-AI pipeline** — Claude → Codex → Gemini (order configurable)
-- **Sequential context** — each reviewer sees prior findings to avoid duplication
-- **Per-repo config** — `.ai-reviewer.yml` in repo root controls prompts, models, skills, and order
-- **Inline comments** — findings are posted as line-level PR review comments
-- **Resilient** — if one reviewer fails, the pipeline continues with the rest
-- **File filtering** — ignore lock files, minified code, generated files via glob patterns
+- **3-pass pipeline** — analyze → review → verify (order and prompts configurable)
+- **Pre-review analysis** — Claude understands code structure before reviewing it
+- **Cross-checking** — final pass catches false positives and missed issues
+- **Per-repo config** — `.ai-reviewer.yml` in repo root controls everything
+- **Inline PR comments** — findings posted as line-level review comments
+- **Resilient** — if one pass fails, the pipeline continues with the rest
 
 ## Quick Start
 
 ### 1. Create a GitHub App
 
-1. Go to **GitHub Settings → Developer settings → GitHub Apps → New GitHub App**
-2. Set the webhook URL to your server (e.g. `https://your-domain.com/api/webhooks`)
-3. Set a webhook secret
-4. Grant permissions:
-   - **Pull requests**: Read & Write
-   - **Contents**: Read
-5. Subscribe to events:
-   - **Pull request**
-6. Generate a private key and download the `.pem` file
-
-### 2. Configure environment
-
-```bash
-cp .env.example .env
-# Fill in the values:
-#   GITHUB_APP_ID, GITHUB_PRIVATE_KEY_PATH, GITHUB_WEBHOOK_SECRET
-#   ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
-```
-
-### 3. Install and run
+Run the setup script:
 
 ```bash
 npm install
-npm run build
-npm start
+npx tsx scripts/setup-app.ts
 ```
 
-### 4. Development mode
+This opens your browser, you click "Create GitHub App", and it saves the credentials automatically.
 
-For local development, use [smee.io](https://smee.io) to forward webhooks:
+### 2. Add your Claude API key to `.env`
 
 ```bash
-# Set SMEE_URL in .env, then:
-npm run dev
+# .env was auto-created by the setup script — just add:
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### 5. Install the App
+### 3. Run
+
+```bash
+npm run dev    # development (with Smee webhook proxy)
+npm run build && npm start  # production
+```
+
+### 4. Install the App
 
 Go to your GitHub App's page and click **Install** on the repositories you want reviewed.
 
-### 6. Configure per-repo (optional)
+### 5. Configure per-repo (optional)
 
 Drop a `.ai-reviewer.yml` in your repo root. See [.ai-reviewer.example.yml](.ai-reviewer.example.yml) for all options.
 
@@ -90,45 +85,15 @@ Drop a `.ai-reviewer.yml` in your repo root. See [.ai-reviewer.example.yml](.ai-
 
 | Key | Description |
 |-----|-------------|
-| `reviewers[].name` | `claude`, `codex`, or `gemini` |
-| `reviewers[].enabled` | Toggle a reviewer on/off |
-| `reviewers[].model` | Model ID to use |
-| `reviewers[].prompt` | Custom system prompt |
+| `reviewers[].name` | Unique name for this pass |
+| `reviewers[].enabled` | Toggle a pass on/off |
+| `reviewers[].model` | Claude model ID |
+| `reviewers[].pass_type` | `analysis` (context only) or `review` (produces findings) |
+| `reviewers[].prompt` | Custom system prompt for this pass |
 | `reviewers[].skills` | Focus areas (included in prompt context) |
 | `settings.post_as` | `review` (inline), `comment` (summary), or `both` |
 | `settings.max_files` | Skip PRs with more files than this |
 | `settings.ignore_patterns` | Glob patterns for files to skip |
-| `settings.fail_on_severity` | Request changes at this severity level |
-
-### Changing reviewer order
-
-The order in the `reviewers` array **is** the execution order. To run Gemini first:
-
-```yaml
-reviewers:
-  - name: gemini
-    enabled: true
-    # ...
-  - name: claude
-    enabled: true
-    # ...
-  - name: codex
-    enabled: true
-    # ...
-```
-
-## Deployment
-
-### Docker
-
-```bash
-docker build -t ai-code-reviewer .
-docker run -p 3000:3000 --env-file .env ai-code-reviewer
-```
-
-### Cloud Run / Railway / Fly.io
-
-The app is a stateless HTTP server — deploy anywhere that runs Docker or Node.js.
 
 ## Project Structure
 
@@ -138,22 +103,27 @@ src/
 ├── server.ts             # Express server + webhook routing
 ├── config/
 │   ├── env.ts            # Environment variable loading
-│   ├── schema.ts         # Config types and defaults
+│   ├── schema.ts         # Config types and 3-pass defaults
 │   └── loader.ts         # Load .ai-reviewer.yml from repo
 ├── github/
 │   ├── app.ts            # GitHub App initialization
 │   ├── diff.ts           # Fetch PR files and patches
 │   └── comments.ts       # Post review findings to PR
 ├── reviewers/
-│   ├── types.ts          # Reviewer interface
-│   ├── prompt.ts         # Shared prompt builder
-│   ├── parse.ts          # Parse AI response → findings
-│   ├── claude.ts         # Anthropic Claude
-│   ├── codex.ts          # OpenAI GPT/Codex
-│   ├── gemini.ts         # Google Gemini
-│   └── registry.ts       # Build reviewer map
+│   ├── types.ts          # Reviewer interface (review + analyze)
+│   ├── prompt.ts         # Prompt builder (injects analysis context)
+│   ├── parse.ts          # Parse Claude response → findings
+│   ├── claude.ts         # Claude API client
+│   └── registry.ts       # Build reviewer instance
 ├── pipeline/
-│   └── orchestrator.ts   # Sequential review pipeline
+│   └── orchestrator.ts   # 3-pass pipeline (analysis → review → verify)
 └── utils/
     └── logger.ts         # Structured logging (pino)
+```
+
+## Deployment
+
+```bash
+docker build -t ai-code-reviewer .
+docker run -p 3000:3000 --env-file .env ai-code-reviewer
 ```

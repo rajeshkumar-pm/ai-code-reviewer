@@ -1,6 +1,6 @@
 import { loadEnv } from "./config/env.js";
 import { initGitHubApp } from "./github/app.js";
-import { buildRegistry } from "./reviewers/registry.js";
+import { buildReviewer } from "./reviewers/registry.js";
 import { createServer } from "./server.js";
 import { logger } from "./utils/logger.js";
 
@@ -13,12 +13,8 @@ async function main(): Promise<void> {
   const app = initGitHubApp(env);
   logger.info({ appId: env.githubAppId }, "GitHub App initialized");
 
-  // 3. Build reviewer registry
-  const registry = buildRegistry(env);
-  logger.info(
-    { activeReviewers: [...registry.keys()] },
-    "Reviewer registry built"
-  );
+  // 3. Build Claude reviewer
+  const reviewer = buildReviewer(env);
 
   // 4. Start Smee proxy in dev (forwards webhooks to localhost)
   if (env.smeeUrl) {
@@ -38,9 +34,8 @@ async function main(): Promise<void> {
   // 5. Start the server
   createServer({
     app,
-    registry,
+    reviewer,
     port: env.port,
-    webhookSecret: env.githubWebhookSecret,
   });
 }
 

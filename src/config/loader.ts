@@ -59,7 +59,7 @@ function mergeReviewers(raw: unknown): ReviewerConfig[] {
   );
 
   return raw.map((entry: Record<string, unknown>) => {
-    const name = entry.name as ReviewerConfig["name"];
+    const name = String(entry.name);
     const base = defaultMap.get(name) ?? DEFAULT_CONFIG.reviewers[0]!;
 
     return {
@@ -69,6 +69,7 @@ function mergeReviewers(raw: unknown): ReviewerConfig[] {
       prompt: (entry.prompt as string) ?? base.prompt,
       skills: (entry.skills as string[]) ?? base.skills,
       maxTokens: (entry.max_tokens as number) ?? base.maxTokens,
+      passType: (entry.pass_type as ReviewerConfig["passType"]) ?? base.passType,
     };
   });
 }

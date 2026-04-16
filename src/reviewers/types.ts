@@ -12,11 +12,15 @@ export interface ReviewFinding {
 export interface ReviewInput {
   pr: PullRequestContext;
   config: ReviewerConfig;
-  /** Findings from earlier reviewers in the pipeline — for context, not duplication */
+  /** Findings from earlier review passes — for context, not duplication */
   priorFindings: ReviewFinding[];
+  /** Analysis text from the code-analyst pass */
+  analysisContext: string;
 }
 
 export interface Reviewer {
   readonly name: string;
   review(input: ReviewInput): Promise<ReviewFinding[]>;
+  /** Run an analysis-only pass — returns free-form text, not findings */
+  analyze(input: ReviewInput): Promise<string>;
 }

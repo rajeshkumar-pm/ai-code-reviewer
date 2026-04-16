@@ -1,58 +1,75 @@
-# .ai-reviewer.yml — drop this in your repo root to configure the reviewer
+# .ai-reviewer.yml — drop this in your repo root to configure the review pipeline
 #
-# The order of reviewers below IS the execution order.
-# Each reviewer sees the findings of all reviewers that ran before it.
+# The order of passes below IS the execution order.
+# Pass 1 (analysis) produces context. Passes 2-3 (review) produce findings.
+# Each review pass sees the analysis context + all prior findings.
 
 reviewers:
-  - name: claude
+  # ── Pass 1: Understand the code BEFORE reviewing ────────────────
+  - name: code-analyst
     enabled: true
     model: claude-sonnet-4-20250514
+    pass_type: analysis
     prompt: |
-      You are a senior code reviewer. Analyze the code changes and provide actionable feedback.
-      Focus on:
-      - Security vulnerabilities (injection, auth issues, data exposure)
-      - Performance bottlenecks
-      - Code quality and best practices
-    skills:
-      - security
-      - performance
-      - best-practices
+      You are a senior software architect. Your job is to deeply understand
+      code changes BEFORE they are reviewed.
 
-  - name: codex
-    enabled: true
-    model: gpt-4o
-    prompt: |
-      You are an expert code reviewer. Analyze the code changes focusing on:
-      - Logic errors and edge cases
-      - Test coverage gaps
-      - Error handling correctness
+      Analyze the diff and produce a structured analysis covering:
+      1. Function inventory — every function added/modified, its purpose
+      2. Dependency map — imports, packages, internal modules
+      3. Data flow — how data enters, transforms, and exits
+      4. State changes — DB, files, globals, caches mutated
+      5. Integration points — APIs called, events emitted
+      6. Risk surface — where user input reaches sensitive operations
     skills:
-      - logic
-      - edge-cases
-      - correctness
-
-  - name: gemini
-    enabled: true
-    model: gemini-2.0-flash
-    prompt: |
-      You are an expert code reviewer performing the final review pass.
-      Focus on:
-      - Architecture and design pattern alignment
-      - Maintainability and readability
-      - Documentation gaps
-    skills:
+      - code-understanding
+      - dependency-analysis
+      - data-flow-tracing
       - architecture
-      - maintainability
-      - documentation
+
+  # ── Pass 2: Deep security & vulnerability review ────────────────
+  - name: security-reviewer
+    enabled: true
+    model: claude-sonnet-4-20250514
+    pass_type: review
+    prompt: |
+      You are a senior application security engineer. Using the code analysis
+      from the previous pass, perform a deep security and vulnerability review.
+
+      Check for: injection, broken auth, data exposure, input validation,
+      weak crypto, error handling, vulnerable dependencies, race conditions,
+      resource management issues.
+
+      Only report real vulnerabilities — no style issues.
+    skills:
+      - owasp-top-10
+      - injection-detection
+      - auth-review
+      - input-validation
+
+  # ── Pass 3: Cross-check and verify ──────────────────────────────
+  - name: verification-pass
+    enabled: true
+    model: claude-sonnet-4-20250514
+    pass_type: review
+    prompt: |
+      You are an independent security auditor. Cross-check the previous
+      security review and catch anything that was missed.
+
+      1. Verify each prior finding — flag false positives
+      2. Find missed vulnerabilities (logic flaws, business logic, edge cases)
+      3. Check for race conditions, resource leaks, unsafe defaults
+
+      Only report NEW findings and any false positives you detect.
+    skills:
+      - false-positive-detection
+      - logic-flaws
+      - business-logic-security
+      - audit
 
 settings:
-  # How to post findings: 'review' (inline), 'comment' (single comment), or 'both'
-  post_as: review
-
-  # Skip PRs with more changed files than this
-  max_files: 50
-
-  # Glob patterns for files to ignore
+  post_as: review        # 'review' (inline), 'comment' (summary), or 'both'
+  max_files: 50          # Skip PRs with more changed files than this
   ignore_patterns:
     - "*.lock"
     - "*.min.js"
@@ -60,7 +77,4 @@ settings:
     - "dist/**"
     - "vendor/**"
     - "**/*.generated.*"
-
-  # Set to a severity level to request changes instead of just commenting
-  # Options: critical, high, medium, low, none
-  fail_on_severity: none
+  fail_on_severity: none # 'critical' | 'high' | 'medium' | 'low' | 'none'
