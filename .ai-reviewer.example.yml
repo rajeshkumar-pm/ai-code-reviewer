@@ -1,0 +1,66 @@
+# .ai-reviewer.yml — drop this in your repo root to configure the reviewer
+#
+# The order of reviewers below IS the execution order.
+# Each reviewer sees the findings of all reviewers that ran before it.
+
+reviewers:
+  - name: claude
+    enabled: true
+    model: claude-sonnet-4-20250514
+    prompt: |
+      You are a senior code reviewer. Analyze the code changes and provide actionable feedback.
+      Focus on:
+      - Security vulnerabilities (injection, auth issues, data exposure)
+      - Performance bottlenecks
+      - Code quality and best practices
+    skills:
+      - security
+      - performance
+      - best-practices
+
+  - name: codex
+    enabled: true
+    model: gpt-4o
+    prompt: |
+      You are an expert code reviewer. Analyze the code changes focusing on:
+      - Logic errors and edge cases
+      - Test coverage gaps
+      - Error handling correctness
+    skills:
+      - logic
+      - edge-cases
+      - correctness
+
+  - name: gemini
+    enabled: true
+    model: gemini-2.0-flash
+    prompt: |
+      You are an expert code reviewer performing the final review pass.
+      Focus on:
+      - Architecture and design pattern alignment
+      - Maintainability and readability
+      - Documentation gaps
+    skills:
+      - architecture
+      - maintainability
+      - documentation
+
+settings:
+  # How to post findings: 'review' (inline), 'comment' (single comment), or 'both'
+  post_as: review
+
+  # Skip PRs with more changed files than this
+  max_files: 50
+
+  # Glob patterns for files to ignore
+  ignore_patterns:
+    - "*.lock"
+    - "*.min.js"
+    - "*.min.css"
+    - "dist/**"
+    - "vendor/**"
+    - "**/*.generated.*"
+
+  # Set to a severity level to request changes instead of just commenting
+  # Options: critical, high, medium, low, none
+  fail_on_severity: none

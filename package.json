@@ -1,0 +1,36 @@
+{
+  "name": "ai-code-reviewer",
+  "version": "1.0.0",
+  "description": "GitHub App that orchestrates multi-AI code reviews (Claude, Codex, Gemini)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.0",
+    "@octokit/app": "^15.1.2",
+    "@octokit/webhooks": "^13.4.2",
+    "express": "^4.21.2",
+    "js-yaml": "^4.1.0",
+    "minimatch": "^10.2.5",
+    "openai": "^4.85.0",
+    "pino": "^9.6.0",
+    "smee-client": "^2.0.4"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
